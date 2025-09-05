@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Edelweiss Flugziele Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #map { height: 100vh; }
+
+    /* Suchfeld oben links */
+    #searchBox {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 8px;
+      border-radius: 4px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+    }
+    #searchInput {
+      width: 220px;
+      padding: 4px;
+      margin-bottom: 6px;
+    }
+    #resetButton {
+      padding: 4px 8px;
+      margin-top: 4px;
+      cursor: pointer;
+    }
+    #resultCount {
+      margin-top: 6px;
+      font-size: 0.9em;
+      color: #333;
+    }
+
+    /* Statistikfeld unten rechts */
+    #statsBox {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 6px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+      font-size: 0.95em;
+      line-height: 1.4em;
+      max-width: 300px;
+    }
+
+    /* IATA-Code Tooltip */
+    .iata-label {
+      background: #888;
+      color: white;
+      font-weight: bold;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .iata-label.visited {
+      background: #2e8b57;
+    }
+  </style>
+</head>
+<body>
+  <div id="searchBox">
+    <input type="text" id="searchInput" placeholder="Suche nach Stadt oder Code..." />
+    <button id="resetButton">🔄 Zurücksetzen</button>
+    <div id="resultCount">Alle Ziele werden angezeigt</div>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="statsBox">
+    <div id="kmCount">Zurückgelegte Distanz: 0 km</div>
+    <div id="percentCount">Erreicht: 0 %</div>
+    <div id="countryList">Bereiste Länder: –</div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([20, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    const zurich = { city: "Zürich", lat: 47.3769, lon: 8.5417 };
+    let visited = JSON.parse(localStorage.getItem("visitedDestinations") || "[]");
+
+    const destinations = [
+     { city: "Fuerteventura", country: "Spanien", code: "FUE", lat: 28.4527, lon: -13.8638 },
+      { city: "Phuket", country: "Thailand", code: "HKT", lat: 7.8804, lon: 98.3923 },
+      { city: "Vancouver", country: "Kanada", code: "YVR", lat: 49.2827, lon: -123.1207 },
+	  { city: "Fuerteventura", country: "Spanien", code: "FUE", lat: 28.4527, lon: -13.8638 },
+      { city: "Lanzarote", country: "Spanien", code: "ACE", lat: 28.9455, lon: -13.6052 },
+      { city: "Gran Canaria", country: "Spanien", code: "LPA", lat: 27.9319, lon: -15.3866 },
+      { city: "Teneriffa Süd", country: "Spanien", code: "TFS", lat: 28.0445, lon: -16.5725 },
+      { city: "La Palma", country: "Spanien", code: "SPC", lat: 28.6265, lon: -17.7556 },
+      { city: "Palma de Mallorca", country: "Spanien", code: "PMI", lat: 39.5517, lon: 2.7388 },
+      { city: "Ibiza", country: "Spanien", code: "IBZ", lat: 38.8729, lon: 1.3731 },
+      { city: "Menorca", country: "Spanien", code: "MAH", lat: 39.8626, lon: 4.2186 },
+      { city: "Bilbao", country: "Spanien", code: "BIO", lat: 43.3011, lon: -2.9106 },
+      { city: "Jerez de la Frontera", country: "Spanien", code: "XRY", lat: 36.7446, lon: -6.0601 },
+      { city: "Santiago de Compostela", country: "Spanien", code: "SCQ", lat: 42.8963, lon: -8.4151 },
+      { city: "Sevilla", country: "Spanien", code: "SVQ", lat: 37.4180, lon: -5.8931 },
+      { city: "Cagliari", country: "Italien", code: "CAG", lat: 39.2515, lon: 9.0500 },
+      { city: "Olbia", country: "Italien", code: "OLB", lat: 40.8987, lon: 9.5176 },
+      { city: "Catania", country: "Italien", code: "CTA", lat: 37.4668, lon: 15.0664 },
+      { city: "Lamezia Terme", country: "Italien", code: "SUF", lat: 38.9054, lon: 16.2423 },
+      { city: "Bari", country: "Italien", code: "BRI", lat: 41.1389, lon: 16.7606 },
+      { city: "Pisa", country: "Italien", code: "PSA", lat: 43.6839, lon: 10.3927 },
+      { city: "Faro", country: "Portugal", code: "FAO", lat: 37.0144, lon: -7.9659 },
+      { city: "Funchal", country: "Portugal", code: "FNC", lat: 32.6669, lon: -16.9241 },
+      { city: "Ponta Delgada", country: "Portugal", code: "PDL", lat: 37.7412, lon: -25.6975 },
+      { city: "Terceira", country: "Portugal", code: "TER", lat: 38.7618, lon: -27.0908 },
+      { city: "Corfu", country: "Griechenland", code: "CFU", lat: 39.6019, lon: 19.9116 },
+      { city: "Kos", country: "Griechenland", code: "KGS", lat: 36.7933, lon: 27.0917 },
+      { city: "Rhodos", country: "Griechenland", code: "RHO", lat: 36.4054, lon: 28.0862 },
+      { city: "Santorini", country: "Griechenland", code: "JTR", lat: 36.3992, lon: 25.4793 },
+      { city: "Mykonos", country: "Griechenland", code: "JMK", lat: 37.4351, lon: 25.3486 },
+      { city: "Samos", country: "Griechenland", code: "SMI", lat: 37.6897, lon: 26.9147 },
+      { city: "Zakynthos", country: "Griechenland", code: "ZTH", lat: 37.7509, lon: 20.8843 },
+      { city: "Skiathos", country: "Griechenland", code: "JSI", lat: 39.1770, lon: 23.5032 },
+      { city: "Chania", country: "Griechenland", code: "CHQ", lat: 35.5317, lon: 24.1497 },
+      { city: "Kalamata", country: "Griechenland", code: "KLX", lat: 37.0683, lon: 22.0255 },
+      { city: "Preveza", country: "Griechenland", code: "PVK", lat: 38.9255, lon: 20.7653 },
+      { city: "Akureyri", country: "Island", code: "AEY", lat: 65.6586, lon: -18.0727 },
+      { city: "Reykjavik", country: "Island", code: "KEF", lat: 63.9850, lon: -22.6056 },
+      { city: "Tromsø", country: "Norwegen", code: "TOS", lat: 69.6833, lon: 18.9189 },
+      { city: "Bergen", country: "Norwegen", code: "BGO", lat: 60.2936, lon: 5.2181 },
+	  { city: "Pula", country: "Kroatien", code: "PUY", lat: 44.8935, lon: 13.9220 },
+{ city: "Zadar", country: "Kroatien", code: "ZAD", lat: 44.1083, lon: 15.3467 },
+{ city: "Tivat", country: "Montenegro", code: "TIV", lat: 42.4047, lon: 18.7233 },
+{ city: "Ohrid", country: "Nordmazedonien", code: "OHD", lat: 41.1231, lon: 20.8016 },
+{ city: "Skopje", country: "Nordmazedonien", code: "SKP", lat: 41.9616, lon: 21.6214 },
+{ city: "Pristina", country: "Kosovo", code: "PRN", lat: 42.5728, lon: 21.0358 },
+{ city: "Varna", country: "Bulgarien", code: "VAR", lat: 43.2321, lon: 27.8251 },
+{ city: "Tiflis", country: "Georgien", code: "TBS", lat: 41.6692, lon: 44.9547 },
+{ city: "Amman", country: "Jordanien", code: "AMM", lat: 31.7226, lon: 35.9932 },
+{ city: "Aqaba", country: "Jordanien", code: "AQJ", lat: 29.6117, lon: 35.0181 },
+{ city: "Maskat", country: "Oman", code: "MCT", lat: 23.5933, lon: 58.2844 },
+{ city: "Salalah", country: "Oman", code: "SLL", lat: 17.0387, lon: 54.0913 },
+{ city: "Mahé", country: "Seychellen", code: "SEZ", lat: -4.6743, lon: 55.5218 },
+{ city: "Kilimanjaro", country: "Tansania", code: "JRO", lat: -3.4294, lon: 37.0745 },
+{ city: "Sansibar", country: "Tansania", code: "ZNZ", lat: -6.2187, lon: 39.2249 },
+{ city: "Gizeh", country: "Ägypten", code: "SPX", lat: 30.1111, lon: 31.3969 },
+{ city: "Hurghada", country: "Ägypten", code: "HRG", lat: 27.1800, lon: 33.7996 },
+{ city: "Luxor", country: "Ägypten", code: "LXR", lat: 25.6710, lon: 32.7066 },
+{ city: "Marsa Alam", country: "Ägypten", code: "RMF", lat: 25.5571, lon: 34.5837 },
+{ city: "Sharm El Sheikh", country: "Ägypten", code: "SSH", lat: 27.9773, lon: 34.3950 },
+{ city: "Liberia", country: "Costa Rica", code: "LIR", lat: 10.5933, lon: -85.5444 },
+{ city: "Puerto Plata", country: "Dominikanische Republik", code: "POP", lat: 19.7579, lon: -70.5695 },
+{ city: "Havana", country: "Kuba", code: "HAV", lat: 22.9892, lon: -82.4091 },
+{ city: "Calgary", country: "Kanada", code: "YYC", lat: 51.1139, lon: -114.0203 },
+{ city: "Edinburgh", country: "Vereinigtes Königreich", code: "EDI", lat: 55.9500, lon: -3.3725 },
+{ city: "Bristol", country: "Vereinigtes Königreich", code: "BRS", lat: 51.3827, lon: -2.7191 },
+{ city: "Newquay", country: "Vereinigtes Königreich", code: "NQY", lat: 50.4406, lon: -4.9954 },
+{ city: "Cork", country: "Irland", code: "ORK", lat: 51.8413, lon: -8.4911 },
+{ city: "Larnaka", country: "Zypern", code: "LCA", lat: 34.9167, lon: 33.6333 },
+{ city: "Paphos", country: "Zypern", code: "PFO", lat: 34.7181, lon: 32.4857 },
+{ city: "Denver", country: "USA", code: "DEN", lat: 39.8561, lon: -104.6737 },
+{ city: "Las Vegas", country: "USA", code: "LAS", lat: 36.1699, lon: -115.1398 },
+{ city: "Orlando", country: "USA", code: "MCO", lat: 28.4312, lon: -81.3081 },
+{ city: "Tampa", country: "USA", code: "TPA", lat: 27.9755, lon: -82.5332 },
+{ city: "San Diego", country: "USA", code: "SAN", lat: 32.7338, lon: -117.1933 },
+{ city: "Vancouver", country: "Kanada", code: "YVR", lat: 49.2827, lon: -123.1207 },
+{ city: "Calgary", country: "Kanada", code: "YYC", lat: 51.1139, lon: -114.0203 },
+{ city: "Halifax", country: "Kanada", code: "YHZ", lat: 44.6488, lon: -63.5752 },
+{ city: "Bogotá", country: "Kolumbien", code: "BOG", lat: 4.7110, lon: -74.0721 },
+{ city: "Cartagena", country: "Kolumbien", code: "CTG", lat: 10.3910, lon: -75.4794 },
+{ city: "San José", country: "Costa Rica", code: "SJO", lat: 9.9281, lon: -84.0907 },
+{ city: "Liberia", country: "Costa Rica", code: "LIR", lat: 10.5933, lon: -85.5444 },
+{ city: "Punta Cana", country: "Dominikanische Republik", code: "PUJ", lat: 18.5820, lon: -68.4055 },
+{ city: "Puerto Plata", country: "Dominikanische Republik", code: "POP", lat: 19.7579, lon: -70.5695 },
+{ city: "Montego Bay", country: "Jamaika", code: "MBJ", lat: 18.4762, lon: -77.8939 },
+{ city: "Havanna", country: "Kuba", code: "HAV", lat: 22.9892, lon: -82.4091 },
+{ city: "Cancún", country: "Mexiko", code: "CUN", lat: 21.1619, lon: -86.8515 },
+{ city: "Colombo", country: "Sri Lanka", code: "CMB", lat: 6.9271, lon: 79.8612 },
+{ city: "Malé", country: "Malediven", code: "MLE", lat: 4.1755, lon: 73.5093 },
+{ city: "Mauritius", country: "Mauritius", code: "MRU", lat: -20.3484, lon: 57.5522 },
+{ city: "Mahé", country: "Seychellen", code: "SEZ", lat: -4.6743, lon: 55.5218 },
+{ city: "Kilimanjaro", country: "Tansania", code: "JRO", lat: -3.4294, lon: 37.0745 },
+{ city: "Sansibar", country: "Tansania", code: "ZNZ", lat: -6.2187, lon: 39.2249 },
+{ city: "Kapstadt", country: "Südafrika", code: "CPT", lat: -33.9249, lon: 18.4241 },
+{ city: "Windhoek", country: "Namibia", code: "WDH", lat: -22.5597, lon: 17.0832 },
+{ city: "Gizeh", country: "Ägypten", code: "SPX", lat: 30.1111, lon: 31.3969 },
+{ city: "Hurghada", country: "Ägypten", code: "HRG", lat: 27.1800, lon: 33.7996 },
+{ city: "Luxor", country: "Ägypten", code: "LXR", lat: 25.6710, lon: 32.7066 },
+{ city: "Marsa Alam", country: "Ägypten", code: "RMF", lat: 25.5571, lon: 34.5837 },
+{ city: "Sharm El Sheikh", country: "Ägypten", code: "SSH", lat: 27.9773, lon: 34.3950 },
+{ city: "Luleå", country: "Schweden", code: "LLA", lat: 65.5436, lon: 22.1219 }
+    ];
+
+    const elements = [];
+
+    destinations.forEach(dest => {
+      const isVisited = visited.includes(dest.city);
+
+      const marker = L.marker([dest.lat, dest.lon]).addTo(map);
+      marker.bindPopup(`
+        <strong>${dest.city}, ${dest.country}</strong><br/>
+        Flughafen-Code: ${dest.code}<br/>
+        <button onclick="toggleVisited('${dest.city}')">
+          ${isVisited ? '❌ Besuch entfernen' : '✔️ Als besucht markieren'}
+        </button>
+      `);
+
+      const label = L.tooltip({
+        permanent: true,
+        direction: 'top',
+        className: isVisited ? 'iata-label visited' : 'iata-label'
+      })
+      .setContent(dest.code)
+      .setLatLng([dest.lat, dest.lon])
+      .addTo(map);
+
+      const line = L.polyline([
+        [zurich.lat, zurich.lon],
+        [dest.lat, dest.lon]
+      ], {
+        color: isVisited ? 'green' : 'gray',
+        weight: 1.5,
+        opacity: 0.7
+      }).addTo(map);
+
+      elements.push({ marker, label, line, dest });
+    });
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function calculateStats() {
+      let totalKm = 0;
+      let visitedCount = 0;
+      const visitedCountries = new Set();
+
+      destinations.forEach(dest => {
+       if (visited.includes(dest.city)) {
+    visitedCount++;
+    totalKm += getDistance(zurich.lat, zurich.lon, dest.lat, dest.lon) * 2;
+    visitedCountries.add(dest.country);
+        }
+      });
+
+      const percent = Math.round((visitedCount / destinations.length) * 100);
+      document.getElementById("kmCount").textContent = `Zurückgelegte Distanz: ${Math.round(totalKm)} km`;
+      document.getElementById("percentCount").textContent = `Erreicht: ${percent} %`;
+
+      const countryArray = Array.from(visitedCountries).sort();
+      const countryText = countryArray.length > 0
+        ? `Bereiste Länder (${countryArray.length}):<br>• ${countryArray.join("<br>• ")}`
+        : "Bereiste Länder: –";
+      document.getElementById("countryList").innerHTML = countryText;
+    }
+
+    function updateSearch() {
+      const query = searchInput.value.trim().toLowerCase();
+      let matchCount = 0;
+
+      elements.forEach(({ marker, label, line, dest }) => {
+        const match = dest.city.toLowerCase().includes(query) || dest.code.toLowerCase().includes(query);
+        if (query === "" || match) {
+          marker.addTo(map);
+          label.addTo(map);
+          line.addTo(map);
+          matchCount++;
+        } else {
+          map.removeLayer(marker);
+          map.removeLayer(label);
+          map.removeLayer(line);
+        }
+      });
+
+      resultCount.textContent = query === ""
+        ? "Alle Ziele werden angezeigt"
+        : `${matchCount} Ziel${matchCount === 1 ? '' : 'e'} gefunden`;
+    }
+
+    window.toggleVisited = function(city) {
+      const index = visited.indexOf(city);
+      if (index === -1) {
+        visited.push(city);
+      } else {
+        visited.splice(index, 1);
+      }
+      localStorage.setItem("visitedDestinations", JSON.stringify(visited));
+      location.reload();
+    };
+
+    const searchInput = document.getElementById("searchInput");
+    const resetButton = document.getElementById("resetButton");
+    const resultCount = document.getElementById("resultCount");
+
+    searchInput.addEventListener("input", updateSearch);
+    resetButton.addEventListener("click", () => {
+      searchInput.value = "";
+      updateSearch();
+    });
+
+    calculateStats();
+  </script>
+</body>
+</html>
